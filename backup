@@ -1,0 +1,77 @@
+FROM centos:stream9 as nvim-base
+
+ENV APP_HOME=/home/1001
+WORKDIR $APP_HOME
+RUN chown 1001 $APP_HOME
+
+# nvim dependencies
+RUN dnf update -y
+RUN dnf install -y wget
+RUN dnf install -y unzip
+RUN dnf install -y cmake
+RUN dnf install -y gcc
+RUN dnf install -y make
+RUN dnf install -y gettext
+RUN dnf install -y git
+
+# Install ninja
+RUN wget https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-linux.zip
+RUN unzip ninja-linux.zip
+RUN mv ninja /usr/local/bin
+RUN rm ninja-linux.zip
+
+# Install neovim
+RUN git clone https://github.com/neovim/neovim
+WORKDIR $APP_HOME/neovim
+RUN make CMAKE_BUILD_TYPE=RelWithDebInfo
+RUN make install
+
+# Configure neovim
+WORKDIR $APP_HOME
+USER 1001
+
+RUN git clone --depth 1 https://github.com/wbthomason/packer.nvim $APP_HOME/.local/share/nvim/site/pack/packer/start/packer.nvim
+
+COPY nvim config
+COPY simple simple
+
+# Compile Packer
+RUN mkdir $APP_HOME/.config
+RUN cp -r simple $APP_HOME/.config/nvim
+RUN nvim --headless +PackerCompile +PackerClean +PackerInstall +PackerUpdate +PackerSync +qa
+#RUN cp $APP_HOME/.config/nvim/plugin/packer_compiled.lua .
+
+# Replace simple config with full
+RUN rm $APP_HOME/.config/nvim/lua/theon/packer.lua
+RUN cp -r config/* $APP_HOME/.config/nvim
+
+USER 0
+RUN rm -r config
+RUN rm -r simple
+RUN rm -r neovim
+USER 1001
+
+# Example with go installed
+FROM nvim-base as go_edit
+
+USER 0
+WORKDIR /usr/app/install
+
+# Install Required Packages
+RUN dnf install -y wget
+RUN dnf install -y tar
+RUN dnf install -y gzip
+
+
+# Download Go Zip
+RUN wget --quiet https://go.dev/dl/go1.20.5.linux-amd64.tar.gz
+
+# Install go
+RUN rm -rf /usr/local/go
+RUN tar -C /usr/local -xzf go1.20.5.linux-amd64.tar.gz
+
+# Add go to path
+ENV PATH=$PATH:/usr/local/go/bin
+
+WORKDIR $APP_HOME
+USER 1001
